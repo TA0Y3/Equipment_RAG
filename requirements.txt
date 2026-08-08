@@ -1,0 +1,30 @@
+# LangChain & LangGraph
+langgraph
+langchain
+langchain_openai
+langchain_community
+
+# Web Framework
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# Database & Storage
+pymilvus
+neo4j
+minio
+pymongo
+
+# AI & Models
+torch
+numpy
+pandas
+modelscope
+FlagEmbedding
+magic-pdf
+regex
+
+# Utils
+python-dotenv
+requests

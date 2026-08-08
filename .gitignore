@@ -1,0 +1,17 @@
+# 敏感文件
+.env
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 日志和输出
+logs/
+output/
+
+# IDE 配置（PyCharm）
+.idea/
+
+# 临时测试文件（如果 1.py 只是临时测试用的）
+1.py
