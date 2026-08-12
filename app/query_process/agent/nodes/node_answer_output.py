@@ -264,6 +264,8 @@ def step_4_write_history(state: QueryGraphState, image_urls = None) -> QueryGrap
   session_id = state.get("session_id", "default")
   answer = (state.get("answer") or "").strip()
   item_names = state.get("item_names") or []
+  # 本轮改写后的问题（用于历史记录追溯检索依据），无改写或为空时回退为空字符串
+  rewritten_query = state.get("rewritten_query", "") or ""
 
   try:
     if answer:
@@ -271,7 +273,7 @@ def step_4_write_history(state: QueryGraphState, image_urls = None) -> QueryGrap
         session_id=session_id,
         role="assistant",
         text=answer,
-        rewritten_query="",
+        rewritten_query=rewritten_query,
         item_names=item_names,
         image_urls=image_urls,
         message_id=None
@@ -313,11 +315,13 @@ def node_answer_output(state: QueryGraphState) -> QueryGraphState:
     # 阶段三：  如果没有answer则 调用大模型输出答案
     step_3_generate_response(state, prompt)
 
-  # 提取图片URL（用于历史记录和前端展示）
-  image_urls = _extract_images_from_docs(state.get("reranked_docs") or [])
+  # 提取图片URL（用于历史记录和前端展示）：缓存命中时优先使用缓存携带的图片，否则从重排文档提取
+  image_urls = state.get("image_urls") or _extract_images_from_docs(state.get("reranked_docs") or [])
 
   # 阶段四：把答案写入到mongodb的history中
-  if state.get("answer"):
+  # 反问/拒答路径（answer 存在且非缓存命中）时，confirm 节点 step_7 已写入助手消息，此处跳过避免重复入库；
+  # 缓存命中（answer 与图片来自缓存）与正常生成路径均正常写入，保证历史完整
+  if state.get("answer") and not (answer_exists and not state.get("cache_hit")):
     logger.info("---写入MongoDB历史记录---")
     step_4_write_history(state, image_urls=image_urls)
 

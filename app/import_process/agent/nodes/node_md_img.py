@@ -192,7 +192,7 @@ def summarize_image(image_path: str, root_folder: str, image_content: Tuple[str,
         return "图片描述"
 
 def step_3_generate_summaries(doc_stem: str, targets: List[Tuple[str, str, Tuple[str, str]]],
-                              requests_per_minute: int = 9) -> Dict[str, str]:
+                              requests_per_minute: int = 1000) -> Dict[str, str]:
     """
     步骤3：批量为待处理图片生成内容摘要，带API速率限制防止触发大模型限流
     :param doc_stem: 文档文件名（不含后缀），作为大模型prompt上下文

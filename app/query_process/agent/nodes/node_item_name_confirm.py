@@ -12,10 +12,37 @@ from app.clients.mongo_history_utils import get_recent_messages, save_chat_messa
 from app.lm.lm_utils import get_llm_client
 from app.lm.embedding_utils import generate_embeddings
 from app.clients.milvus_utils import get_milvus_client, create_hybrid_search_requests, hybrid_search
+from app.clients.milvus_cache_utils import write_cache_record
 from dotenv import load_dotenv, find_dotenv
 from app.core.logger import logger
 
 load_dotenv(find_dotenv())
+
+
+def step_1_5_write_cache(session_id: str, history: List[Dict]) -> None:
+    """
+    步骤1.5：问题缓存写入（在本轮用户消息保存之前执行，history 仍是上一轮结束时的状态）
+    取历史中最新一条 assistant 消息（需含非空 rewritten_query、item_names 与答案），
+    向量化后写入 Milvus 缓存集合（去重覆盖 + 容量上限20条）；任何失败仅记录日志，不影响主流程。
+    :param session_id: 会话唯一标识
+    :param history: get_recent_messages 返回的历史记录列表
+    """
+    try:
+        # 从后往前找最新一条助手消息（每轮正常问答结束于 assistant 消息）
+        for msg in reversed(history or []):
+            if msg.get("role") == "assistant" and msg.get("text"):
+                rewritten_query = (msg.get("rewritten_query") or "").strip()
+                item_names = msg.get("item_names") or []
+                answer = msg.get("text") or ""
+                if not rewritten_query or not item_names:
+                    logger.debug("Step 1.5: 最新助手消息缺少 rewritten_query/item_names，跳过缓存写入")
+                    return
+                image_urls = msg.get("image_urls") or []
+                write_cache_record(session_id, item_names, rewritten_query, answer, image_urls)
+                return
+        logger.debug("Step 1.5: 历史中无可用助手消息，跳过缓存写入")
+    except Exception as e:
+        logger.error(f"Step 1.5: 缓存写入异常: {e}", exc_info=True)
 
 
 def step_3_extract_info(query: str, history: List[Dict]) -> Dict:
@@ -289,8 +316,9 @@ def step_7_write_history(state: Dict, session_id: str, history: List[Dict], rewr
             session_id=session_id,
             role="assistant",
             text=state["answer"],
-            rewritten_query="",
-            item_names=[]
+            rewritten_query=rewritten_query or "",  # 写入本轮真实改写问题，空值回退为空字符串
+            item_names=[],
+            image_urls=[]  # 反问/拒答路径无检索文档，图片为空列表，保证字段一致性
         )
 
     # 更新用户消息（关联 rewrite_query 和 item_names）
@@ -323,6 +351,9 @@ def node_item_name_confirm(state: QueryGraphState) -> QueryGraphState:
     # 1. 获取历史记录
     history = get_recent_messages(session_id, limit=10)
     logger.info(f"Node: 获取到 {len(history)} 条历史消息")
+
+    # 1.5 缓存写入（第2步之前，history 仍是上一轮结束状态，写入的是上一轮问答）
+    step_1_5_write_cache(session_id, history)
 
     # 2. 保存用户当前消息 (初始保存，后续 step 7 会更新)
     message_id = save_chat_message(session_id, "user", original_query, "", state.get("item_names", []))

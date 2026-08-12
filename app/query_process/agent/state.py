@@ -22,6 +22,10 @@ class QueryGraphState(TypedDict):
     prompt: str  # 组装好的 Prompt
     answer: str  # 最终生成的答案
 
+    # 缓存命中相关数据
+    image_urls: list  # 缓存命中时携带的历史答案图片URL列表
+    cache_hit: bool  # 是否命中问题缓存（跳过三路检索）
+
     # 辅助信息
     item_names: List[str]  # 提取出的商品名称
     rewritten_query: str  # 改写后的问题

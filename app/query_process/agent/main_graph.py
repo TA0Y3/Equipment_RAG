@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, END
 from app.query_process.agent.state import QueryGraphState
 # 导入所有节点函数
 from app.query_process.agent.nodes.node_item_name_confirm import node_item_name_confirm
+from app.query_process.agent.nodes.node_query_cache import node_query_cache
 from app.query_process.agent.nodes.node_answer_output import node_answer_output
 from app.query_process.agent.nodes.node_rerank import node_rerank
 from app.query_process.agent.nodes.node_rrf import node_rrf
@@ -14,6 +15,7 @@ builder = StateGraph(QueryGraphState)
 
 # 注册所有节点
 builder.add_node("node_item_name_confirm", node_item_name_confirm)  # 确认商品
+builder.add_node("node_query_cache", node_query_cache)  # 问题缓存命中检测（新增）
 builder.add_node("node_multi_search", lambda x: x)  # 虚拟节点：多路搜索分叉点
 builder.add_node("node_search_embedding", node_search_embedding)  # 向量搜索
 builder.add_node("node_search_embedding_hyde", node_search_embedding_hyde)
@@ -48,14 +50,28 @@ def route_after_item_confirm(state: QueryGraphState):
         - 结果 ：同样不需要后续检索，直接结束流程。
         """
         return "node_answer_output"
-    # 否则继续搜索流程
+    # 无反问/拒答时，先经过问题缓存命中检测
+    return "node_query_cache"
+
+
+def route_after_query_cache(state: QueryGraphState):
+    # 缓存命中（state 中已有 answer）：直接跳转到答案输出，跳过耗时三路检索
+    if state.get("answer"):
+        return "node_answer_output"
+    # 未命中：继续三路并行检索流程
     return "node_multi_search"
 
 
-# 1. 意图确认 -> (条件分叉) -> 多路搜索 / 答案输出
+# 1. 意图确认 -> (条件分叉) -> 问题缓存命中检测
 builder.add_conditional_edges(
     "node_item_name_confirm",
     route_after_item_confirm
+)
+
+# 1.5 问题缓存命中检测 -> (条件分叉) -> 直接输出答案 / 多路搜索
+builder.add_conditional_edges(
+    "node_query_cache",
+    route_after_query_cache
 )
 
 # 2. 并发执行三路搜索
